@@ -85,7 +85,7 @@ After pulling new changes, click the reload button on the extension card, then r
 2. The extension starts in **Raw-Input** right away, with no button to press. Type normally.
 3. To let the extension help, open the popup and pick **Automatic** or **Semi-Auto**:
    - **Semi-Auto** starts immediately: from now on, any character key types the next correct character.
-   - **Automatic** arms itself and waits for **one character key**. That key is swallowed and never reaches the page; Automatic starts typing right after.
+   - **Automatic** arms itself and waits for **one character key**. That key is swallowed and never reaches the page; Automatic starts typing right after. While it runs, every character key you press is swallowed too, so stray keys cannot break the test. F6 / F7 / F8 keep working.
 4. Press **F8** (or the popup's Pause button) to drop back into Raw-Input. Press **F8** again to resume the previous mode.
 5. When the result screen appears, the run is finished. Reload the page to take a new test; it starts in Raw-Input again.
 
@@ -124,7 +124,7 @@ The popup polls the page every 300 ms while it is open. When Raw-Input was enter
 |                                                                           | Raw-Input                                         | Automatic                                       | Semi-Auto                        |
 | ------------------------------------------------------------------------- | ------------------------------------------------- | ----------------------------------------------- | -------------------------------- |
 | Who produces keystrokes                                                   | You                                               | Engine (timer)                                  | You (1 key = 1 buffer character) |
-| Your character keys reach the page                                        | Yes, unchanged                                    | Yes, not blocked                                | No, swallowed and replaced       |
+| Your character keys reach the page                                        | Yes, unchanged                                    | No, swallowed while running                     | No, swallowed and replaced       |
 | Simulated typos (accuracy)                                                | No                                                | Yes                                             | Yes                              |
 | Uses WPM / Humanize                                                       | No                                                | Yes                                             | No                               |
 | Auto-clicks the in-game Start button / presses Space on the prompt screen | No                                                | Yes, once running                               | Yes                              |
@@ -160,7 +160,7 @@ The popup polls the page every 300 ms while it is open. When Raw-Input was enter
 │   ├── extractor.js           # DOM scanning: Romaji, prompt/result screens, span.entered, observer
 │   ├── engine.js              # Mode/state machine, buffer, key interception, Automatic typing
 │   ├── content.js             # Popup ↔ frames ↔ top window bridge
-│   ├── hotkey.js              # F8 / Ctrl+Shift+X → engine.toggle()
+│   ├── hotkey.js              # F8 → engine.toggle()
 │   ├── settings.js            # Loads/syncs persistent settings from chrome.storage into the engine
 │   └── widget.js, widget.css  # Legacy floating widget, NOT loaded by the manifest
 ├── popup/
@@ -242,7 +242,7 @@ One capture-phase `keydown` listener on `window` (game frame only) handles **tru
 | Automatic + `ARMED`       | Swallow; start Automatic.                                                                                                                         |
 | Semi-Auto + running state | Swallow; dispatch the next buffer character (or a typo). On the prompt screen with an empty buffer, Space is forwarded so you can start the test. |
 | Raw-Input + running state | Do not touch; compare with the buffer (match → advance, mismatch → count a miss and reveal Romaji).                                               |
-| Automatic running         | Do not touch.                                                                                                                                     |
+| Automatic running         | Swallow and ignore. With Auto Space off, Space on the prompt screen (empty buffer) is forwarded so you can start the test.                        |
 
 The `e.code` of a swallowed `keydown` is remembered, and the matching `keypress` / `keyup` are swallowed too, so the page never sees a stray key release.
 Synthetic events from the dispatcher have `isTrusted === false`, so the interceptor ignores them and they reach the game normally.
@@ -269,7 +269,6 @@ Synthetic events from the dispatcher have `isTrusted === false`, so the intercep
 - **Browser shortcuts**: **F6** and **F7** are also browser shortcuts in Chrome (focus the address bar, caret browsing). `preventDefault()` is called, but whether Chrome still runs its own action has not been verified.
 - **No hotkey feedback**: F6 gives no visual confirmation; open the popup to check the state. F7 is visible immediately on the page.
 - **Focused frame only**: hotkeys are handled in the focused frame. F8 is forwarded from the top window; F6/F7 work in any frame because they only write to storage.
-- **Your keys in Automatic**: character keys you press while Automatic is typing still reach the page.
 - **New test without a reload**: after the result screen, the engine stops observing. Retrying in the same iframe needs a page reload.
 - **Polling cost**: every non-host e-typing frame runs the observer plus the 60 ms poll, including frames that are not the test.
 - **Camouflage scope**: camouflage changes only the popup page. The toolbar tooltip ("your friendly extension"), the icon and the entry in `chrome://extensions` are not changed by F6.

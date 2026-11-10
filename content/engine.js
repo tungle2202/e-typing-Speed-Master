@@ -3,7 +3,8 @@
  * Trích xuất Romaji của câu hiện tại vào buffer và làm việc theo một trong ba chế độ:
  * - raw  (mặc định mỗi lần tải trang): người dùng tự gõ, phím đi thẳng tới trang; engine chỉ theo dõi buffer,
  *        phím lệch với buffer -> ghi nhận gõ sai và tạm hiện romaji. Luôn hoạt động, không có nút điều khiển.
- * - auto: tự gõ theo WPM / Accuracy. Khi được chọn, chờ 1 phím ký tự (bị chặn) rồi mới chạy.
+ * - auto: tự gõ theo WPM / Accuracy. Khi được chọn, chờ 1 phím ký tự (bị chặn) rồi mới chạy;
+ *        trong lúc chạy mọi phím ký tự của người dùng đều bị chặn (F6 / F7 / F8 vẫn hoạt động).
  * - semi: mỗi phím ký tự người dùng gõ -> đẩy 1 ký tự tiếp theo trong buffer (có sai số theo Accuracy).
  *         Khi được chọn, chạy ngay.
  * Pause (F8 / popup) ở auto / semi -> chuyển sang raw và nhớ chế độ trước; F8 ở raw -> quay lại chế độ đó.
@@ -309,6 +310,18 @@
           this.swallowedCodes.add(e.code);
           console.log('[e-typing Engine] Nhận phím kích hoạt -> Automatic chạy');
           this.activateCurrentMode();
+          return;
+        }
+
+        // Auto đang chạy: mọi phím ký tự của người dùng đều bị chặn, chỉ engine gõ vào trang.
+        // Phím chức năng (F6 / F7 / F8...) không phải phím ký tự nên vẫn đi qua bình thường.
+        if (this.mode === 'auto' && RUNNING_STATES.includes(this.state)) {
+          swallow(e);
+          this.swallowedCodes.add(e.code);
+          // Màn hình chờ khi tắt Auto Space: chuyển tiếp Space để người dùng vẫn tự bắt đầu được
+          if (!this.buffer && e.key === ' ' && !this.config.autoSpace && window.ETypingDispatcher) {
+            window.ETypingDispatcher.dispatchSpace();
+          }
           return;
         }
 

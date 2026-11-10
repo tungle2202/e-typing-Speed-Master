@@ -1,6 +1,6 @@
 /**
  * e-typing Global Hotkey Controller
- * F8 (hoặc Ctrl + Shift + X):
+ * F8:
  * - Automatic / Semi-Auto -> Pause: chuyển sang Raw-Input, nhớ chế độ trước
  * - Raw-Input sau khi Pause -> quay lại chế độ trước và chạy tiếp
  * - Raw-Input thuần (vừa vào trang) -> không làm gì
@@ -10,10 +10,7 @@
   'use strict';
 
   function handleHotkey(e) {
-    const isF8 = e.key === 'F8' || e.code === 'F8';
-    const isFallback = (e.ctrlKey && e.shiftKey && (e.key === 'X' || e.key === 'x' || e.code === 'KeyX'));
-
-    if (!isF8 && !isFallback) return;
+    if (e.key !== 'F8' && e.code !== 'F8') return;
 
     // Prevent default browser/game handling
     e.preventDefault();
