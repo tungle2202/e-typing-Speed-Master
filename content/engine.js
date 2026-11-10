@@ -238,6 +238,30 @@
       }
     }
 
+    /**
+     * Semi-Auto: khi kích hoạt (Start / Resume), đặt con trỏ buffer theo số ký tự đã nằm trong
+     * <span class="entered"> của trang, để không đẩy lại từ đầu những ký tự đã được gõ (kể cả gõ tay).
+     */
+    syncCursorFromPage() {
+      if (this.config.mode !== 'semi' || !this.buffer || !window.ETypingExtractor) return;
+
+      const entered = window.ETypingExtractor.getEnteredText(this.buffer);
+      if (entered === null) return;
+
+      if (!this.buffer.startsWith(entered)) {
+        console.warn(`[Game Frame] Phần đã gõ '${entered}' không khớp đầu buffer '${this.buffer}', vẫn đặt con trỏ theo số ký tự`);
+      }
+
+      const index = Math.min(entered.length, this.buffer.length);
+      if (index !== this.stats.currentCharIndex) {
+        console.log(`[Game Frame] Đồng bộ con trỏ buffer: ${this.stats.currentCharIndex} -> ${index}`);
+      }
+      this.stats.currentCharIndex = index;
+      this.typoPending = false;
+      this.notify('statsUpdate', this.stats);
+      this.setState(index < this.buffer.length ? 'TYPING' : 'BETWEEN_SENTENCES');
+    }
+
     // Mỗi ký tự có tối đa 1 lỗi, nên độ chính xác = 1 / (1 + p) => p = (100 - A) / A
     shouldMakeTypo() {
       const accuracy = Math.max(80, Math.min(100, this.config.accuracy));
@@ -337,6 +361,8 @@
       if (window.ETypingExtractor) {
         const info = window.ETypingExtractor.getCurrentSentenceInfo(this.stats);
         this.handleDOMChange(info);
+        // Kích hoạt giữa chừng một câu (đã gõ tay một phần) -> trỏ tới ký tự tiếp theo
+        this.syncCursorFromPage();
       }
     }
 
@@ -367,6 +393,7 @@
         if (window.ETypingExtractor) {
           this.handleDOMChange(window.ETypingExtractor.getCurrentSentenceInfo(this.stats));
         }
+        this.syncCursorFromPage();
         if (this.config.mode === 'auto') this.typeNextChar();
       }
     }
