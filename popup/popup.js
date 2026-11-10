@@ -16,6 +16,7 @@
   const inputWpm = document.getElementById('pop-input-wpm');
   const cpmLabel = document.getElementById('pop-cpm-label');
   const chkHumanize = document.getElementById('pop-chk-humanize');
+  const chkHide = document.getElementById('pop-chk-hide');
 
   const sliderAcc = document.getElementById('pop-slider-acc');
   const inputAcc = document.getElementById('pop-input-acc');
@@ -152,6 +153,17 @@
     btn.addEventListener('click', () => updateWPM(btn.getAttribute('data-wpm')));
   });
 
+  // Ẩn romaji: hider.js trên trang tự áp dụng khi etm_hide_enabled đổi (cùng khóa với phím F7)
+  chkHide.addEventListener('change', (e) => {
+    chrome.storage.local.set({ etm_hide_enabled: e.target.checked });
+  });
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes.etm_hide_enabled) {
+      chkHide.checked = changes.etm_hide_enabled.newValue !== false;
+    }
+  });
+
   chkHumanize.addEventListener('change', (e) => {
     sendTabMessage('UPDATE_CONFIG', { config: { humanize: e.target.checked } });
     chrome.storage.local.set({ etm_humanize: e.target.checked });
@@ -220,7 +232,9 @@
   }
 
   // Load storage dự phòng
-  chrome.storage.local.get(['etm_mode', 'etm_wpm', 'etm_acc', 'etm_humanize'], (res) => {
+  chrome.storage.local.get(['etm_mode', 'etm_wpm', 'etm_acc', 'etm_humanize', 'etm_hide_enabled'], (res) => {
+    // Mặc định bật, giống hider.js
+    chkHide.checked = res.etm_hide_enabled !== false;
     if (res.etm_mode) renderMode(res.etm_mode);
     if (res.etm_wpm) updateWPM(res.etm_wpm);
     if (res.etm_acc) updateAcc(res.etm_acc);

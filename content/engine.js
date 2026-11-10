@@ -42,8 +42,6 @@
 
   const isHostWindow = (window.top === window && !document.getElementById('sentenceText') && !location.pathname.includes('/app/'));
 
-  const HIDE_STYLE_ID = 'etyping-master-hide-style';
-
   const ACTIVE_RUN_STATES = ['WAITING_FOR_START', 'TYPING', 'BETWEEN_SENTENCES', 'PAUSED'];
 
   // Semi-Auto: các trạng thái mà phím ký tự thật của người dùng bị chặn và thay bằng ký tự trong buffer
@@ -110,10 +108,46 @@
       };
 
       window.addEventListener('keydown', (e) => {
-        if (swallow(e)) this.handleUserKeystroke(e);
+        if (swallow(e)) {
+          this.handleUserKeystroke(e);
+        } else if (e.isTrusted && isCharacterKey(e) && this.isSemiTrackingManual()) {
+          this.trackManualKeystroke(e);
+        }
       }, true);
       window.addEventListener('keypress', swallow, true);
       window.addEventListener('keyup', swallow, true);
+    }
+
+    // Semi-Auto đang tắt (PAUSED): engine vẫn chạy ngầm, theo dõi buffer nhưng không can thiệp vào phím
+    isSemiTrackingManual() {
+      return this.config.mode === 'semi' && this.state === 'PAUSED';
+    }
+
+    /**
+     * Semi-Auto đang tắt: phím thật của người dùng đi thẳng tới trang (không chặn, không dịch, không tự gõ sai).
+     * Engine chỉ so sánh với ký tự đang được trỏ trong buffer:
+     * - khớp -> tiến con trỏ
+     * - lệch -> ghi nhận gõ sai, tạm hiện romaji của câu hiện tại (ẩn lại khi câu mới được load)
+     */
+    trackManualKeystroke(e) {
+      if (this.stats.currentCharIndex >= this.buffer.length) return;
+
+      const expected = this.buffer[this.stats.currentCharIndex];
+      if (e.key.toUpperCase() === expected.toUpperCase()) {
+        this.stats.currentCharIndex += 1;
+        this.stats.typedChars += 1;
+      } else {
+        console.log(`[Game Frame] Gõ tay sai: '${e.key}' (cần '${expected}') -> tạm hiện romaji`);
+        this.stats.errorsCount += 1;
+        this.reportMissToHider();
+      }
+      this.notify('statsUpdate', this.stats);
+
+      // Trang có thể chấp nhận cách gõ romaji khác (vd: SI thay vì SHI). Sau khi trang xử lý xong phím này,
+      // căn lại con trỏ theo span.entered để không bị lệch dần.
+      setTimeout(() => {
+        if (this.isSemiTrackingManual()) this.alignCursorWithEntered();
+      }, 0);
     }
 
     // Semi-Auto: mỗi phím ký tự người dùng gõ -> đẩy đúng 1 ký tự vào trang.
@@ -128,6 +162,7 @@
           const typoChar = this.getTypoChar(nextChar);
           console.log(`[Typo Simulation] Đẩy nhầm '${typoChar}' thay cho '${nextChar}'`);
           window.ETypingDispatcher.dispatchChar(typoChar);
+          this.reportMissToHider();
           this.typoPending = true;
           this.stats.errorsCount += 1;
           this.notify('statsUpdate', this.stats);
@@ -182,26 +217,7 @@
       if (this.state === newState) return;
       console.log(`[e-typing Engine] Trạng thái: ${this.state} -> ${newState}`);
       this.state = newState;
-      this.updateHideStyle();
       this.notify('stateChange', newState);
-    }
-
-    // hide.css chỉ được bật trong lúc tool đang chạy auto typing
-    updateHideStyle() {
-      if (this.isHost) return;
-
-      const shouldHide = this.state !== 'IDLE' && this.state !== 'COMPLETED';
-      const existing = document.getElementById(HIDE_STYLE_ID);
-
-      if (shouldHide && !existing) {
-        const link = document.createElement('link');
-        link.id = HIDE_STYLE_ID;
-        link.rel = 'stylesheet';
-        link.href = chrome.runtime.getURL('content/hide.css');
-        document.head.appendChild(link);
-      } else if (!shouldHide && existing) {
-        existing.remove();
-      }
     }
 
     // Kết thúc lượt chạy: ngừng theo dõi DOM để không tự gõ tiếp câu mới
@@ -252,14 +268,27 @@
         console.warn(`[Game Frame] Phần đã gõ '${entered}' không khớp đầu buffer '${this.buffer}', vẫn đặt con trỏ theo số ký tự`);
       }
 
-      const index = Math.min(entered.length, this.buffer.length);
-      if (index !== this.stats.currentCharIndex) {
-        console.log(`[Game Frame] Đồng bộ con trỏ buffer: ${this.stats.currentCharIndex} -> ${index}`);
-      }
-      this.stats.currentCharIndex = index;
+      this.alignCursorWithEntered(entered);
       this.typoPending = false;
+      this.setState(this.stats.currentCharIndex < this.buffer.length ? 'TYPING' : 'BETWEEN_SENTENCES');
+    }
+
+    // Đặt con trỏ buffer = số ký tự trong span.entered (không đổi trạng thái engine)
+    alignCursorWithEntered(entered = undefined) {
+      if (!this.buffer || !window.ETypingExtractor) return;
+      if (entered === undefined) entered = window.ETypingExtractor.getEnteredText(this.buffer);
+      if (entered === null) return;
+
+      const index = Math.min(entered.length, this.buffer.length);
+      if (index === this.stats.currentCharIndex) return;
+      console.log(`[Game Frame] Đồng bộ con trỏ buffer: ${this.stats.currentCharIndex} -> ${index}`);
+      this.stats.currentCharIndex = index;
       this.notify('statsUpdate', this.stats);
-      this.setState(index < this.buffer.length ? 'TYPING' : 'BETWEEN_SENTENCES');
+    }
+
+    // Báo cho module ẩn câu (hider.js) biết engine vừa cố ý gõ sai; trang cũng tự báo qua #miss-type-screen
+    reportMissToHider() {
+      if (window.ETypingHider) window.ETypingHider.reportMiss();
     }
 
     // Mỗi ký tự có tối đa 1 lỗi, nên độ chính xác = 1 / (1 + p) => p = (100 - A) / A
@@ -434,7 +463,19 @@
     handleDOMChange(info) {
       if (!info) return;
       if (this.isHost) return;
-      if (this.state === 'PAUSED') return;
+
+      if (this.state === 'PAUSED') {
+        // Semi-Auto tắt chỉ là tắt ở bề mặt: vẫn kết thúc bài và vẫn nạp câu mới vào buffer
+        if (this.isSemiTrackingManual()) {
+          if (info.isResultScreen) {
+            this.finish();
+          } else if (info.fullText && info.fullText !== this.buffer) {
+            console.log('[Game Frame] (Tắt) Câu Romaji mới vào buffer:', info.fullText);
+            this.loadBuffer(info.fullText);
+          }
+        }
+        return;
+      }
 
       // Màn hình kết quả là tín hiệu duy nhất để kết thúc bài test
       if (info.isResultScreen) {
@@ -481,6 +522,9 @@
       this.stats.currentCharIndex = 0;
       this.stats.sentenceIndex += 1;
       this.notify('statsUpdate', this.stats);
+
+      // Đang tắt: chỉ cập nhật buffer, giữ nguyên PAUSED
+      if (this.state === 'PAUSED') return;
 
       if (this.config.mode === 'semi') {
         this.setState('TYPING');
@@ -535,6 +579,7 @@
         if (window.ETypingDispatcher) {
           window.ETypingDispatcher.dispatchChar(typoChar);
         }
+        this.reportMissToHider();
         this.stats.errorsCount += 1;
         this.notify('statsUpdate', this.stats);
 
