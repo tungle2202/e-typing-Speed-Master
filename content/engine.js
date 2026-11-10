@@ -1,7 +1,9 @@
 /**
- * e-typing Auto-Typing Engine (V6 - Bắt Câu Siêu Nhạy & Đảm Bảo Typing 100%)
+ * e-typing Auto-Typing Engine (V7 - Automatic & Semi-Auto)
  * Điều phối chính xác giữa Host Window và Game Frame, tự động kích hoạt Start/Space,
- * trích xuất Romaji sạch và gõ mượt mà từng câu.
+ * trích xuất Romaji sạch vào buffer rồi đẩy từng ký tự vào trang theo một trong hai chế độ:
+ * - auto: tự gõ theo WPM / Accuracy
+ * - semi: mỗi phím ký tự người dùng gõ -> đẩy 1 ký tự tiếp theo trong buffer (có sai số theo Accuracy)
  */
 (function() {
   'use strict';
@@ -44,14 +46,23 @@
 
   const ACTIVE_RUN_STATES = ['WAITING_FOR_START', 'TYPING', 'BETWEEN_SENTENCES', 'PAUSED'];
 
+  // Semi-Auto: các trạng thái mà phím ký tự thật của người dùng bị chặn và thay bằng ký tự trong buffer
+  const INTERCEPT_STATES = ['WAITING_FOR_START', 'TYPING', 'BETWEEN_SENTENCES'];
+
+  // Phím ký tự in được (không kèm Ctrl/Alt/Meta). Phím chức năng (F8, Backspace, Enter...) đi qua bình thường
+  function isCharacterKey(e) {
+    return typeof e.key === 'string' && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey;
+  }
+
   class TypingEngine {
     constructor() {
       this.isHost = isHostWindow;
       this.state = 'IDLE'; // IDLE, WAITING_FOR_START, TYPING, BETWEEN_SENTENCES, PAUSED, COMPLETED
 
       this.config = {
+        mode: 'auto', // 'auto' (Automatic) | 'semi' (Semi-Auto)
         wpm: 120,
-        accuracy: 98,
+        accuracy: 90,
         humanize: true,
         autoSpace: true,
         sentenceDelay: 200
@@ -66,7 +77,11 @@
         startTime: null
       };
 
-      this.currentSentenceText = '';
+      // Buffer chứa câu vừa parse từ DOM; bị ghi đè mỗi khi trang chuyển sang câu mới.
+      // stats.currentCharIndex là con trỏ tới ký tự tiếp theo sẽ được đẩy vào trang.
+      this.buffer = '';
+      // Semi-Auto: phím trước đó đã đẩy ký tự sai, phím kế tiếp bắt buộc đẩy ký tự đúng
+      this.typoPending = false;
       this.typingTimer = null;
       this.stopObserving = null;
       this.hostPingInterval = null;
@@ -75,6 +90,67 @@
         stateChange: [],
         statsUpdate: []
       };
+
+      if (!this.isHost) {
+        this.installKeyInterceptor();
+      }
+    }
+
+    /**
+     * Bắt toàn bộ phím ký tự thật (isTrusted) ở capture phase của window để chặn chúng trước khi tới trang.
+     * Sự kiện do Dispatcher phát ra có isTrusted = false nên đi qua listener này và tới game bình thường.
+     */
+    installKeyInterceptor() {
+      const swallow = (e) => {
+        if (!e.isTrusted || !isCharacterKey(e)) return false;
+        if (this.config.mode !== 'semi' || !INTERCEPT_STATES.includes(this.state)) return false;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return true;
+      };
+
+      window.addEventListener('keydown', (e) => {
+        if (swallow(e)) this.handleUserKeystroke(e);
+      }, true);
+      window.addEventListener('keypress', swallow, true);
+      window.addEventListener('keyup', swallow, true);
+    }
+
+    // Semi-Auto: mỗi phím ký tự người dùng gõ -> đẩy đúng 1 ký tự vào trang.
+    // Theo Accuracy, phím đó có thể đẩy 1 ký tự sai (phím lân cận); phím kế tiếp sẽ đẩy lại ký tự đúng.
+    handleUserKeystroke(e) {
+      if (!window.ETypingDispatcher) return;
+
+      if (this.stats.currentCharIndex < this.buffer.length) {
+        const nextChar = this.buffer[this.stats.currentCharIndex];
+
+        if (!this.typoPending && this.shouldMakeTypo()) {
+          const typoChar = this.getTypoChar(nextChar);
+          console.log(`[Typo Simulation] Đẩy nhầm '${typoChar}' thay cho '${nextChar}'`);
+          window.ETypingDispatcher.dispatchChar(typoChar);
+          this.typoPending = true;
+          this.stats.errorsCount += 1;
+          this.notify('statsUpdate', this.stats);
+          return;
+        }
+
+        this.typoPending = false;
+        window.ETypingDispatcher.dispatchChar(nextChar);
+        this.stats.currentCharIndex += 1;
+        this.stats.typedChars += 1;
+        this.notify('statsUpdate', this.stats);
+
+        if (this.stats.currentCharIndex >= this.buffer.length) {
+          console.log('[Game Frame] Đã đẩy hết buffer:', this.buffer);
+          this.setState('BETWEEN_SENTENCES');
+        }
+        return;
+      }
+
+      // Chưa có câu nào trong buffer (màn hình chờ): chuyển tiếp Space để người dùng tự bắt đầu bài test
+      if (!this.buffer && e.key === ' ') {
+        window.ETypingDispatcher.dispatchSpace();
+      }
     }
 
     on(event, callback) {
@@ -135,15 +211,37 @@
         this.stopObserving();
         this.stopObserving = null;
       }
-      this.currentSentenceText = '';
+      this.buffer = '';
       this.setState('COMPLETED');
     }
 
     updateConfig(newConfig) {
+      const prevMode = this.config.mode;
       this.config = { ...this.config, ...newConfig };
       if (this.isHost && window.ETypingSendCommand) {
         window.ETypingSendCommand('UPDATE_CONFIG', newConfig);
+        return;
       }
+      if (this.config.mode !== prevMode) this.onModeChange();
+    }
+
+    // Đổi chế độ giữa chừng: tiếp tục từ vị trí hiện tại trong buffer
+    onModeChange() {
+      clearTimeout(this.typingTimer);
+      this.typoPending = false;
+      const hasRemaining = this.stats.currentCharIndex < this.buffer.length;
+      if (this.config.mode === 'auto' && this.state === 'TYPING') {
+        this.typeNextChar();
+      } else if (this.config.mode === 'semi' && this.state === 'BETWEEN_SENTENCES' && hasRemaining) {
+        // Hủy nhịp nghỉ đầu câu của Automatic, chờ phím người dùng ngay
+        this.setState('TYPING');
+      }
+    }
+
+    // Mỗi ký tự có tối đa 1 lỗi, nên độ chính xác = 1 / (1 + p) => p = (100 - A) / A
+    shouldMakeTypo() {
+      const accuracy = Math.max(80, Math.min(100, this.config.accuracy));
+      return Math.random() < (100 - accuracy) / accuracy;
     }
 
     getDelayBetweenChars(char) {
@@ -225,7 +323,7 @@
       this.stats.sentenceIndex = 0;
       this.stats.currentCharIndex = 0;
       this.stats.currentSentence = '';
-      this.currentSentenceText = '';
+      this.buffer = '';
 
       this.setState('WAITING_FOR_START');
 
@@ -249,7 +347,8 @@
         return;
       }
 
-      if (this.state === 'TYPING' || this.state === 'WAITING_FOR_START' || this.state === 'BETWEEN_SENTENCES') {
+      // Khi PAUSED, phím thật của người dùng đi thẳng tới trang
+      if (INTERCEPT_STATES.includes(this.state)) {
         clearTimeout(this.typingTimer);
         this.setState('PAUSED');
       }
@@ -263,8 +362,12 @@
       }
 
       if (this.state === 'PAUSED') {
-        this.setState('TYPING');
-        this.typeNextChar();
+        this.setState(this.stats.currentCharIndex < this.buffer.length ? 'TYPING' : 'BETWEEN_SENTENCES');
+        // Câu có thể đã đổi trong lúc tạm dừng (handleDOMChange bỏ qua khi PAUSED) -> đồng bộ lại buffer
+        if (window.ETypingExtractor) {
+          this.handleDOMChange(window.ETypingExtractor.getCurrentSentenceInfo(this.stats));
+        }
+        if (this.config.mode === 'auto') this.typeNextChar();
       }
     }
 
@@ -285,7 +388,7 @@
         this.stopObserving();
         this.stopObserving = null;
       }
-      this.currentSentenceText = '';
+      this.buffer = '';
       this.setState('IDLE');
     }
 
@@ -319,11 +422,11 @@
         try { info.startBtnElement.click(); } catch(e) {}
       }
 
-      // 2. Nếu phát hiện câu Romaji -> Bắt đầu gõ ngay
+      // 2. Phát hiện câu Romaji mới -> ghi đè buffer (auto: tự gõ; semi: chờ phím người dùng)
       if (info.fullText) {
-        if (info.fullText !== this.currentSentenceText) {
-          console.log('[Game Frame] Phát hiện câu Romaji mới:', info.fullText);
-          this.startNewSentence(info.fullText);
+        if (info.fullText !== this.buffer) {
+          console.log('[Game Frame] Câu Romaji mới vào buffer:', info.fullText);
+          this.loadBuffer(info.fullText);
         }
         return;
       }
@@ -342,16 +445,23 @@
       }
     }
 
-    startNewSentence(sentenceText) {
+    // Ghi đè buffer bằng câu vừa parse được; con trỏ quay về đầu câu
+    loadBuffer(sentenceText) {
       clearTimeout(this.typingTimer);
-      this.currentSentenceText = sentenceText;
+      this.buffer = sentenceText;
+      this.typoPending = false;
       this.stats.currentSentence = sentenceText;
       this.stats.currentCharIndex = 0;
       this.stats.sentenceIndex += 1;
       this.notify('statsUpdate', this.stats);
 
-      this.setState('BETWEEN_SENTENCES');
+      if (this.config.mode === 'semi') {
+        this.setState('TYPING');
+        return;
+      }
 
+      // Automatic: nghỉ ngắn như người đọc câu mới rồi tự gõ
+      this.setState('BETWEEN_SENTENCES');
       const delay = Math.max(80, this.config.sentenceDelay || 200);
       this.typingTimer = setTimeout(() => {
         if (this.state === 'PAUSED' || this.state === 'IDLE') return;
@@ -360,10 +470,11 @@
       }, delay);
     }
 
+    // Automatic: tự gõ ký tự tiếp theo trong buffer theo WPM, có sai số theo Accuracy
     typeNextChar() {
-      if (this.state !== 'TYPING') return;
+      if (this.state !== 'TYPING' || this.config.mode !== 'auto') return;
 
-      const sentence = this.currentSentenceText;
+      const sentence = this.buffer;
       const index = this.stats.currentCharIndex;
 
       // Đã gõ xong câu hiện tại -> chuyển trạng thái chờ đổi câu
@@ -374,42 +485,9 @@
       }
 
       const correctChar = sentence[index];
-      const accuracy = Math.max(80, Math.min(100, this.config.accuracy));
-      // Mỗi ký tự có tối đa 1 lỗi, nên độ chính xác = 1 / (1 + p) => p = (100 - A) / A
-      const typoProbability = (100 - accuracy) / accuracy;
-      const shouldMakeTypo = Math.random() < typoProbability;
       const delay = this.getDelayBetweenChars(correctChar);
 
-      if (shouldMakeTypo) {
-        const typoChar = this.getTypoChar(correctChar);
-        console.log(`[Typo Simulation] Gõ nhầm '${typoChar}', sửa lại '${correctChar}'`);
-
-        // Gõ phím sai
-        if (window.ETypingDispatcher) {
-          window.ETypingDispatcher.dispatchChar(typoChar);
-        }
-        this.stats.errorsCount += 1;
-        this.notify('statsUpdate', this.stats);
-
-        // Mô phỏng ngập ngừng của người thật
-        const hesitation = 70 + Math.random() * 60;
-        this.typingTimer = setTimeout(() => {
-          if (this.state !== 'TYPING') return;
-          // Gõ lại phím đúng
-          if (window.ETypingDispatcher) {
-            window.ETypingDispatcher.dispatchChar(correctChar);
-          }
-          this.stats.typedChars += 1;
-          this.stats.currentCharIndex += 1;
-          this.notify('statsUpdate', this.stats);
-
-          this.typingTimer = setTimeout(() => {
-            this.typeNextChar();
-          }, delay);
-        }, hesitation);
-
-      } else {
-        // Gõ phím đúng
+      const typeCorrect = () => {
         if (window.ETypingDispatcher) {
           window.ETypingDispatcher.dispatchChar(correctChar);
         }
@@ -420,6 +498,27 @@
         this.typingTimer = setTimeout(() => {
           this.typeNextChar();
         }, delay);
+      };
+
+      if (this.shouldMakeTypo()) {
+        const typoChar = this.getTypoChar(correctChar);
+        console.log(`[Typo Simulation] Gõ nhầm '${typoChar}', sửa lại '${correctChar}'`);
+
+        // Gõ phím sai
+        if (window.ETypingDispatcher) {
+          window.ETypingDispatcher.dispatchChar(typoChar);
+        }
+        this.stats.errorsCount += 1;
+        this.notify('statsUpdate', this.stats);
+
+        // Mô phỏng ngập ngừng của người thật rồi gõ lại phím đúng
+        const hesitation = 70 + Math.random() * 60;
+        this.typingTimer = setTimeout(() => {
+          if (this.state !== 'TYPING') return;
+          typeCorrect();
+        }, hesitation);
+      } else {
+        typeCorrect();
       }
     }
   }

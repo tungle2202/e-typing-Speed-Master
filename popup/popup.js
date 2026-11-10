@@ -25,7 +25,41 @@
   const statChars = document.getElementById('pop-stat-chars');
   const statErrors = document.getElementById('pop-stat-errors');
 
+  const modeButtons = document.querySelectorAll('.mode-btn[data-mode]');
+  const modeHint = document.getElementById('pop-mode-hint');
+  const secWpm = document.getElementById('pop-sec-wpm');
+
+  const MODE_INFO = {
+    auto: { label: 'Auto', hint: 'Tự gõ theo WPM & Accuracy', typing: 'Đang gõ...' },
+    semi: { label: 'Semi-Auto', hint: 'Mỗi phím bạn gõ = 1 ký tự đúng', typing: 'Chờ phím của bạn...' }
+  };
+
   let currentEngineState = 'IDLE';
+  let currentMode = 'auto';
+
+  // Cập nhật giao diện theo chế độ (không gửi đi)
+  function renderMode(mode) {
+    currentMode = MODE_INFO[mode] ? mode : 'auto';
+    modeButtons.forEach(btn => {
+      const active = btn.getAttribute('data-mode') === currentMode;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-checked', String(active));
+    });
+    modeHint.textContent = MODE_INFO[currentMode].hint;
+    // Semi-Auto không dùng WPM: nhịp gõ là của người dùng
+    secWpm.hidden = currentMode === 'semi';
+    applyState(currentEngineState);
+  }
+
+  function setMode(mode) {
+    renderMode(mode);
+    sendTabMessage('UPDATE_CONFIG', { config: { mode: currentMode } });
+    chrome.storage.local.set({ etm_mode: currentMode });
+  }
+
+  modeButtons.forEach(btn => {
+    btn.addEventListener('click', () => setMode(btn.getAttribute('data-mode')));
+  });
 
   // Gửi thông điệp tới Content Script trong active tab
   function sendTabMessage(action, data = {}, callback = null) {
@@ -51,7 +85,7 @@
         statusBadge.classList.add('idle');
         statusText.textContent = 'Sẵn sàng';
         btnStart.disabled = false;
-        btnStart.textContent = '▶ Bắt đầu (Auto)';
+        btnStart.textContent = `▶ Bắt đầu (${MODE_INFO[currentMode].label})`;
         btnPause.disabled = true;
         btnPause.textContent = '⏸ Tạm dừng';
         break;
@@ -64,7 +98,7 @@
       case 'TYPING':
       case 'BETWEEN_SENTENCES':
         statusBadge.classList.add('typing');
-        statusText.textContent = 'Đang gõ...';
+        statusText.textContent = MODE_INFO[currentMode].typing;
         btnStart.disabled = true;
         btnPause.disabled = false;
         btnPause.textContent = '⏸ Tạm dừng';
@@ -102,7 +136,7 @@
 
   // Cập nhật Accuracy
   function updateAcc(val) {
-    const acc = parseInt(val, 10) || 100;
+    const acc = parseInt(val, 10) || 90;
     sliderAcc.value = acc;
     inputAcc.value = acc;
     accLabel.textContent = `${acc}%`;
@@ -161,6 +195,7 @@
       if (res && res.state) {
         applyState(res.state);
         if (res.config) {
+          if (res.config.mode && res.config.mode !== currentMode) renderMode(res.config.mode);
           if (res.config.wpm) {
             sliderWpm.value = res.config.wpm;
             inputWpm.value = res.config.wpm;
@@ -185,7 +220,8 @@
   }
 
   // Load storage dự phòng
-  chrome.storage.local.get(['etm_wpm', 'etm_acc', 'etm_humanize'], (res) => {
+  chrome.storage.local.get(['etm_mode', 'etm_wpm', 'etm_acc', 'etm_humanize'], (res) => {
+    if (res.etm_mode) renderMode(res.etm_mode);
     if (res.etm_wpm) updateWPM(res.etm_wpm);
     if (res.etm_acc) updateAcc(res.etm_acc);
     if (res.etm_humanize !== undefined) chkHumanize.checked = res.etm_humanize;

@@ -7,6 +7,7 @@
   'use strict';
 
   const STORAGE_TO_CONFIG = {
+    etm_mode: 'mode',
     etm_wpm: 'wpm',
     etm_acc: 'accuracy',
     etm_humanize: 'humanize'

@@ -24,6 +24,18 @@
 
     <!-- Main Content -->
     <main class="content">
+      <!-- VÙNG 0: Chế độ -->
+      <section class="sec">
+        <div class="sec-head">
+          <span>Chế độ</span>
+          <span class="hotkey-tip" id="pop-mode-hint">Tự gõ theo WPM &amp; Accuracy</span>
+        </div>
+        <div class="mode-switch" role="radiogroup">
+          <button class="mode-btn active" data-mode="auto" role="radio" aria-checked="true">Automatic</button>
+          <button class="mode-btn" data-mode="semi" role="radio" aria-checked="false">Semi-Auto</button>
+        </div>
+      </section>
+
       <!-- VÙNG 1: Điều khiển chính -->
       <section class="sec">
         <div class="sec-head">
@@ -41,7 +53,7 @@
       </section>
 
       <!-- VÙNG 2: Thiết lập WPM (Tốc độ) -->
-      <section class="sec">
+      <section class="sec" id="pop-sec-wpm">
         <div class="sec-head">
           <span>Tốc độ gõ (WPM)</span>
           <span class="highlight" id="pop-cpm-label">600 CPM</span>
@@ -66,11 +78,11 @@
       <section class="sec">
         <div class="sec-head">
           <span>Độ chính xác</span>
-          <span class="highlight-green" id="pop-acc-label">98%</span>
+          <span class="highlight-green" id="pop-acc-label">90%</span>
         </div>
         <div class="range-row">
-          <input type="range" class="slider" id="pop-slider-acc" min="80" max="100" step="1" value="98">
-          <input type="number" class="num-input" id="pop-input-acc" min="80" max="100" value="98">
+          <input type="range" class="slider" id="pop-slider-acc" min="80" max="100" step="1" value="90">
+          <input type="number" class="num-input" id="pop-input-acc" min="80" max="100" value="90">
         </div>
         <div class="presets">
           <button class="preset-btn" data-acc="100">100%</button>
