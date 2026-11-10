@@ -1,6 +1,11 @@
 /**
-  * e-typing Global Hotkey Controller (Independent of UI Widget)
-  */
+ * e-typing Global Hotkey Controller
+ * F8 (hoặc Ctrl + Shift + X):
+ * - Automatic / Semi-Auto -> Pause: chuyển sang Raw-Input, nhớ chế độ trước
+ * - Raw-Input sau khi Pause -> quay lại chế độ trước và chạy tiếp
+ * - Raw-Input thuần (vừa vào trang) -> không làm gì
+ * Nếu phím rơi vào Top Window (focus ngoài khung bài test), engine Host chuyển lệnh xuống iframe.
+ */
 (function() {
   'use strict';
 
@@ -13,24 +18,9 @@
     // Prevent default browser/game handling
     e.preventDefault();
     e.stopPropagation();
+    if (e.repeat) return;
 
-    // 1. Try controlling local engine first
-    const engine = window.ETypingEngine;
-    if (engine) {
-      if (engine.state === 'TYPING') {
-        engine.pause();
-      } else if (engine.state === 'PAUSED') {
-        engine.resume();
-      } else {
-        engine.start();
-      }
-      return;
-    }
-
-    // 2. Fallback: If top window and engine not directly ready, use bridge
-    if (window.ETypingSendCommand) {
-      window.ETypingSendCommand('START');
-    }
+    if (window.ETypingEngine) window.ETypingEngine.toggle();
   }
 
   // Use capturing phase (true) so the event is intercepted before game listeners

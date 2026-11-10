@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Quick Notes</title>
+  <link rel="stylesheet" href="camouflage.css">
+</head>
+<body>
+  <!-- Popup ngụy trang (camouflage): nội dung giả, tĩnh, không mạo danh sản phẩm nào.
+       Bật / tắt bằng phím F6 trên trang; xem background.js. -->
+  <div class="notes">
+    <header class="notes-head">
+      <div class="notes-title">
+        <span class="notes-logo" aria-hidden="true">✎</span>
+        <h1>Quick Notes</h1>
+      </div>
+      <button class="icon-btn" type="button" title="New note" aria-label="New note">+</button>
+    </header>
+
+    <input class="notes-search" type="search" placeholder="Search notes" aria-label="Search notes">
+
+    <ul class="notes-list">
+      <li class="note">
+        <div class="note-row">
+          <span class="note-name">Groceries</span>
+          <span class="note-date">Today</span>
+        </div>
+        <p class="note-preview">Milk, eggs, rice, green tea, tofu, a bag of apples…</p>
+      </li>
+      <li class="note">
+        <div class="note-row">
+          <span class="note-name">Weekly plan</span>
+          <span class="note-date">Mon</span>
+        </div>
+        <p class="note-preview">Finish the report draft, call the dentist, laundry on Thursday.</p>
+      </li>
+      <li class="note">
+        <div class="note-row">
+          <span class="note-name">Books to read</span>
+          <span class="note-date">Nov 2</span>
+        </div>
+        <p class="note-preview">The Pragmatic Programmer · Norwegian Wood · Atomic Habits</p>
+      </li>
+      <li class="note">
+        <div class="note-row">
+          <span class="note-name">Wi-Fi at the café</span>
+          <span class="note-date">Oct 28</span>
+        </div>
+        <p class="note-preview">Ask the staff for today's password at the counter.</p>
+      </li>
+    </ul>
+
+    <footer class="notes-foot">
+      <span>4 notes</span>
+      <span>Synced just now</span>
+    </footer>
+  </div>
+</body>
+</html>

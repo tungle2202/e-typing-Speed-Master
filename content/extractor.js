@@ -182,6 +182,28 @@
     },
 
     /**
+     * Đọc phần đã gõ của câu hiện tại: <span class="entered"> bên trong <div id="sentenceText">.
+     * Trả về chuỗi Latin đã chuẩn hóa (bỏ khoảng trắng, viết hoa) để so với buffer,
+     * hoặc null nếu không tìm thấy thẻ nào (không biết tiến độ thì không được đụng vào con trỏ).
+     * Nếu có nhiều thẻ .entered (ví dụ dòng kana và dòng romaji), ưu tiên thẻ khớp đầu buffer.
+     */
+    getEnteredText(buffer = '') {
+      const spans = document.querySelectorAll('#sentenceText span.entered');
+      if (spans.length === 0) return null;
+
+      const candidates = [];
+      for (const span of spans) {
+        const text = (span.textContent || '').replace(/\s+/g, '').toUpperCase();
+        // Bỏ qua thẻ .entered của dòng chữ Nhật
+        if (/[぀-ヿ㐀-䶿一-鿿豈-﫿]/.test(text)) continue;
+        candidates.push(text);
+      }
+      if (candidates.length === 0) return null;
+
+      return candidates.find(text => buffer.startsWith(text)) ?? candidates[0];
+    },
+
+    /**
      * Nhận biết màn hình kết quả dựa trên nội dung đang hiển thị, không dựa vào số câu.
      * Chỉ áp dụng sau khi đã gõ ít nhất một câu, và không bao giờ khi câu hiện tại còn dang dở.
      */

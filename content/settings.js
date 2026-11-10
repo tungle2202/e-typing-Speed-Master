@@ -2,6 +2,7 @@
  * e-typing Settings Sync
  * Nạp cấu hình người dùng từ chrome.storage vào Engine của từng frame và theo dõi thay đổi,
  * để Game Frame luôn dùng đúng WPM / Accuracy kể cả khi iframe được tạo sau khi chỉnh cấu hình.
+ * Chế độ (raw / auto / semi) cố ý KHÔNG được lưu: mỗi lần tải trang luôn bắt đầu ở Raw-Input.
  */
 (function() {
   'use strict';
