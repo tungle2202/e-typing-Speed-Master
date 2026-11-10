@@ -27,8 +27,10 @@ maps your own keystrokes onto it, or simply watches you type and reveals hidden 
 
 - [Features](#features)
 - [Installation](#installation)
+  - [Download the extension](#download-the-extension)
   - [On Chromium browsers](#on-chromium-browsers)
   - [On Gecko browsers](#on-gecko-browsers)
+  - [Building packages](#building-packages)
 - [Usage](#usage)
   - [Hotkeys](#hotkeys)
   - [Popup](#popup)
@@ -64,18 +66,68 @@ maps your own keystrokes onto it, or simply watches you type and reveals hidden 
 
 ## Installation
 
+### Download the extension
+
+1. Go to the [Releases page](https://github.com/tungle2202/e-typing-ghostTyper/releases) and download the package for your browser:
+   - `ghosttyper-chromium-v<version>.zip` for Chromium-based browsers;
+   - `ghosttyper-firefox-v<version>.zip` for Firefox.
+2. Chromium only: extract the zip into a folder. `manifest.json` is at the top level of that folder. Firefox can load the zip directly.
+
+To build the packages yourself instead, see [Building packages](#building-packages).
+
 ### On Chromium browsers
 
-1. Open `chrome://extensions/` in Chrome (or any Chromium browser).
-2. Turn on **Developer mode** (top-right corner).
-3. Click **Load unpacked** and select the repository root, the folder that contains `manifest.json`.
-4. Optionally pin the extension to the toolbar.
+Tested on Chromium 156.0.8078.79; it seems to work well on my system.
 
-After pulling new changes, click the reload button on the extension card, then reload any open e-typing tabs. Content scripts are only injected into pages loaded after the reload.
+#### Build from source (optional, instead of the pre-built package)
+
+```sh
+node scripts/build.mjs chromium
+```
+
+This needs Node.js and `zip`, and writes `dist/chromium/` and `dist/ghosttyper-chromium-v<version>.zip`.
+
+#### Load the extension
+
+1. Open `chrome://extensions/` in Chrome (or any Chromium-based browser).
+2. Turn on **Developer mode** (top-right corner).
+3. Click **Load unpacked** and select the folder that contains `manifest.json`: the folder you extracted the release zip into, or `dist/chromium/` if you built it yourself.
+4. Optionally, pin the extension to the toolbar.
+
+After updating (extracting a newer release or rebuilding), click the reload button on the extension card, then reload any open e-typing tabs. Content scripts are only injected into pages loaded after the reload.
 
 ### On Gecko browsers
 
-> Not supported yet; support may be added later.
+Requires Firefox 128 or newer. The extension is not signed, so it is loaded as a **temporary add-on**: it stays installed until Firefox is closed and has to be loaded again in each new session.
+
+Tested on Mozilla Firefox 158.0.1; it seems to work well on my system.
+
+#### Build from source (optional, instead of the pre-built package)
+
+```sh
+node scripts/build.mjs firefox
+```
+
+This needs Node.js and `zip`, and writes `dist/firefox/` and `dist/ghosttyper-firefox-v<version>.zip`.
+
+#### Load the extension
+
+1. Open `about:debugging#/runtime/this-firefox` in Firefox (or another Gecko-based browser).
+2. Click **Load Temporary Add-on…** and select the Firefox zip file, or the `manifest.json` inside its extracted folder (`dist/firefox/manifest.json` if you built it yourself).
+3. If the extension does nothing on e-typing.ne.jp, open `about:addons` → GhostTyper → **Permissions** and allow access to `e-typing.ne.jp`.
+
+> **Do not** load the repository root in Firefox: the root `manifest.json` is the Chromium one and uses a background service worker, which Firefox does not run.
+
+### Building packages
+
+`node scripts/build.mjs` builds both targets into `dist/` (`node scripts/build.mjs chromium` or `firefox` builds one):
+
+| Target   | Manifest                                                                                                             | Output                                                      |
+| -------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| chromium | `manifest.json` as-is                                                                                                | `dist/chromium/`, `dist/ghosttyper-chromium-v<version>.zip` |
+| firefox  | `manifest.json` merged with `manifest.firefox.json`; `background.service_worker` is replaced by `background.scripts` | `dist/firefox/`, `dist/ghosttyper-firefox-v<version>.zip`   |
+
+Shared fields (version, permissions, content scripts) live only in `manifest.json`; `manifest.firefox.json` holds just the Firefox differences, so each package contains only keys its browser understands.
 
 ---
 
@@ -151,8 +203,10 @@ The popup polls the page every 300 ms while it is open. When Raw-Input was enter
 
 ```
 .
-├── manifest.json              # MV3 manifest (name: ghosttyper, v1.1.0)
-├── background.js              # Service worker: swaps the action popup for camouflage (F6)
+├── manifest.json              # MV3 manifest (name: ghosttyper, v1.1.0), Chromium
+├── manifest.firefox.json      # Firefox-only overrides merged in by scripts/build.mjs
+├── background.js              # Background (service worker / Firefox event page): swaps the popup for camouflage (F6)
+├── scripts/build.mjs          # Builds dist/chromium and dist/firefox packages
 ├── content/
 │   ├── hider.js               # Sentence hiding module (F7) + mistype reveal; independent of the engine
 │   ├── camouflage.js          # F6 hotkey → toggles etm_camouflage
@@ -267,6 +321,7 @@ Synthetic events from the dispatcher have `isTrusted === false`, so the intercep
 ## Known limitations
 
 - **Browser shortcuts**: **F6** and **F7** are also browser shortcuts in Chrome (focus the address bar, caret browsing). `preventDefault()` is called, but whether Chrome still runs its own action has not been verified.
+- **Firefox**: only temporary loading is supported (unsigned), so the add-on is removed when Firefox closes. F6 / F7 are also Firefox shortcuts (focus the address bar, caret browsing); whether `preventDefault()` stops them there has not been verified.
 - **No hotkey feedback**: F6 gives no visual confirmation; open the popup to check the state. F7 is visible immediately on the page.
 - **Focused frame only**: hotkeys are handled in the focused frame. F8 is forwarded from the top window; F6/F7 work in any frame because they only write to storage.
 - **New test without a reload**: after the result screen, the engine stops observing. Retrying in the same iframe needs a page reload.
