@@ -28,10 +28,11 @@
       <section class="sec">
         <div class="sec-head">
           <span>Chế độ</span>
-          <span class="hotkey-tip" id="pop-mode-hint">Tự gõ theo WPM &amp; Accuracy</span>
+          <span class="hotkey-tip" id="pop-mode-hint">Bạn tự gõ, sai thì hiện romaji</span>
         </div>
         <div class="mode-switch" role="radiogroup">
-          <button class="mode-btn active" data-mode="auto" role="radio" aria-checked="true">Automatic</button>
+          <button class="mode-btn active" data-mode="raw" role="radio" aria-checked="true">Raw-Input</button>
+          <button class="mode-btn" data-mode="auto" role="radio" aria-checked="false">Automatic</button>
           <button class="mode-btn" data-mode="semi" role="radio" aria-checked="false">Semi-Auto</button>
         </div>
       </section>
@@ -80,7 +81,7 @@
       </section>
 
       <!-- VÙNG 3: Thiết lập Độ chính xác (Accuracy) -->
-      <section class="sec">
+      <section class="sec" id="pop-sec-acc">
         <div class="sec-head">
           <span>Độ chính xác</span>
           <span class="highlight-green" id="pop-acc-label">90%</span>

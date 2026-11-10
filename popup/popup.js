@@ -29,26 +29,30 @@
   const modeButtons = document.querySelectorAll('.mode-btn[data-mode]');
   const modeHint = document.getElementById('pop-mode-hint');
   const secWpm = document.getElementById('pop-sec-wpm');
+  const secAcc = document.getElementById('pop-sec-acc');
 
+  const DEFAULT_MODE = 'raw';
   const MODE_INFO = {
+    raw: { label: 'Raw', hint: 'Bạn tự gõ, sai thì hiện romaji', typing: 'Đang theo dõi...' },
     auto: { label: 'Auto', hint: 'Tự gõ theo WPM & Accuracy', typing: 'Đang gõ...' },
     semi: { label: 'Semi-Auto', hint: 'Mỗi phím bạn gõ = 1 ký tự đúng', typing: 'Chờ phím của bạn...' }
   };
 
   let currentEngineState = 'IDLE';
-  let currentMode = 'auto';
+  let currentMode = DEFAULT_MODE;
 
   // Cập nhật giao diện theo chế độ (không gửi đi)
   function renderMode(mode) {
-    currentMode = MODE_INFO[mode] ? mode : 'auto';
+    currentMode = MODE_INFO[mode] ? mode : DEFAULT_MODE;
     modeButtons.forEach(btn => {
       const active = btn.getAttribute('data-mode') === currentMode;
       btn.classList.toggle('active', active);
       btn.setAttribute('aria-checked', String(active));
     });
     modeHint.textContent = MODE_INFO[currentMode].hint;
-    // Semi-Auto không dùng WPM: nhịp gõ là của người dùng
-    secWpm.hidden = currentMode === 'semi';
+    // Semi-Auto / Raw không dùng WPM: nhịp gõ là của người dùng. Raw không tạo lỗi nên không cần Accuracy
+    secWpm.hidden = currentMode !== 'auto';
+    secAcc.hidden = currentMode === 'raw';
     applyState(currentEngineState);
   }
 
@@ -235,7 +239,7 @@
   chrome.storage.local.get(['etm_mode', 'etm_wpm', 'etm_acc', 'etm_humanize', 'etm_hide_enabled'], (res) => {
     // Mặc định bật, giống hider.js
     chkHide.checked = res.etm_hide_enabled !== false;
-    if (res.etm_mode) renderMode(res.etm_mode);
+    renderMode(res.etm_mode || DEFAULT_MODE);
     if (res.etm_wpm) updateWPM(res.etm_wpm);
     if (res.etm_acc) updateAcc(res.etm_acc);
     if (res.etm_humanize !== undefined) chkHumanize.checked = res.etm_humanize;

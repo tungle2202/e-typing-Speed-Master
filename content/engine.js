@@ -1,9 +1,12 @@
 /**
  * e-typing Auto-Typing Engine (V7 - Automatic & Semi-Auto)
  * Điều phối chính xác giữa Host Window và Game Frame, tự động kích hoạt Start/Space,
- * trích xuất Romaji sạch vào buffer rồi đẩy từng ký tự vào trang theo một trong hai chế độ:
+ * trích xuất Romaji sạch vào buffer rồi làm việc theo một trong ba chế độ:
+ * - raw (mặc định): người dùng tự gõ, phím đi thẳng tới trang; engine chỉ theo dõi buffer,
+ *   phím lệch với buffer -> ghi nhận gõ sai và tạm hiện romaji. Tự kích hoạt khi vào trang bài test.
  * - auto: tự gõ theo WPM / Accuracy
- * - semi: mỗi phím ký tự người dùng gõ -> đẩy 1 ký tự tiếp theo trong buffer (có sai số theo Accuracy)
+ * - semi: mỗi phím ký tự người dùng gõ -> đẩy 1 ký tự tiếp theo trong buffer (có sai số theo Accuracy).
+ *   Khi tạm dừng (F8), Semi-Auto hoạt động như Raw-Input.
  */
 (function() {
   'use strict';
@@ -58,7 +61,7 @@
       this.state = 'IDLE'; // IDLE, WAITING_FOR_START, TYPING, BETWEEN_SENTENCES, PAUSED, COMPLETED
 
       this.config = {
-        mode: 'auto', // 'auto' (Automatic) | 'semi' (Semi-Auto)
+        mode: 'raw', // 'raw' (Raw-Input, mặc định) | 'auto' (Automatic) | 'semi' (Semi-Auto)
         wpm: 120,
         accuracy: 90,
         humanize: true,
@@ -110,7 +113,7 @@
       window.addEventListener('keydown', (e) => {
         if (swallow(e)) {
           this.handleUserKeystroke(e);
-        } else if (e.isTrusted && isCharacterKey(e) && this.isSemiTrackingManual()) {
+        } else if (e.isTrusted && isCharacterKey(e) && this.isTrackingManual()) {
           this.trackManualKeystroke(e);
         }
       }, true);
@@ -118,13 +121,14 @@
       window.addEventListener('keyup', swallow, true);
     }
 
-    // Semi-Auto đang tắt (PAUSED): engine vẫn chạy ngầm, theo dõi buffer nhưng không can thiệp vào phím
-    isSemiTrackingManual() {
+    // Theo dõi gõ tay (không can thiệp vào phím): Raw-Input đang chạy, hoặc Semi-Auto đang tạm dừng
+    isTrackingManual() {
+      if (this.config.mode === 'raw') return INTERCEPT_STATES.includes(this.state);
       return this.config.mode === 'semi' && this.state === 'PAUSED';
     }
 
     /**
-     * Semi-Auto đang tắt: phím thật của người dùng đi thẳng tới trang (không chặn, không dịch, không tự gõ sai).
+     * Raw-Input / Semi-Auto đang tắt: phím thật của người dùng đi thẳng tới trang (không chặn, không dịch, không tự gõ sai).
      * Engine chỉ so sánh với ký tự đang được trỏ trong buffer:
      * - khớp -> tiến con trỏ
      * - lệch -> ghi nhận gõ sai, tạm hiện romaji của câu hiện tại (ẩn lại khi câu mới được load)
@@ -146,7 +150,7 @@
       // Trang có thể chấp nhận cách gõ romaji khác (vd: SI thay vì SHI). Sau khi trang xử lý xong phím này,
       // căn lại con trỏ theo span.entered để không bị lệch dần.
       setTimeout(() => {
-        if (this.isSemiTrackingManual()) this.alignCursorWithEntered();
+        if (this.isTrackingManual()) this.alignCursorWithEntered();
       }, 0);
     }
 
@@ -238,13 +242,26 @@
         window.ETypingSendCommand('UPDATE_CONFIG', newConfig);
         return;
       }
-      if (this.config.mode !== prevMode) this.onModeChange();
+      if (this.config.mode !== prevMode) this.onModeChange(prevMode);
     }
 
     // Đổi chế độ giữa chừng: tiếp tục từ vị trí hiện tại trong buffer
-    onModeChange() {
+    onModeChange(prevMode) {
       clearTimeout(this.typingTimer);
       this.typoPending = false;
+
+      // Vào Raw-Input: kích hoạt theo dõi ngay, không cần Start
+      if (this.config.mode === 'raw') {
+        this.stop();
+        this.start();
+        return;
+      }
+      // Rời Raw-Input: về IDLE, chờ người dùng chủ động Start (tránh tự gõ ngay khi vừa chọn Automatic)
+      if (prevMode === 'raw') {
+        this.stop();
+        return;
+      }
+
       const hasRemaining = this.stats.currentCharIndex < this.buffer.length;
       if (this.config.mode === 'auto' && this.state === 'TYPING') {
         this.typeNextChar();
@@ -259,7 +276,7 @@
      * <span class="entered"> của trang, để không đẩy lại từ đầu những ký tự đã được gõ (kể cả gõ tay).
      */
     syncCursorFromPage() {
-      if (this.config.mode !== 'semi' || !this.buffer || !window.ETypingExtractor) return;
+      if (this.config.mode === 'auto' || !this.buffer || !window.ETypingExtractor) return;
 
       const entered = window.ETypingExtractor.getEnteredText(this.buffer);
       if (entered === null) return;
@@ -466,7 +483,7 @@
 
       if (this.state === 'PAUSED') {
         // Semi-Auto tắt chỉ là tắt ở bề mặt: vẫn kết thúc bài và vẫn nạp câu mới vào buffer
-        if (this.isSemiTrackingManual()) {
+        if (this.isTrackingManual()) {
           if (info.isResultScreen) {
             this.finish();
           } else if (info.fullText && info.fullText !== this.buffer) {
@@ -484,13 +501,16 @@
         return;
       }
 
+      // Raw-Input: người dùng tự bấm Start / Space
+      const isRaw = this.config.mode === 'raw';
+
       // 1. Tự động click nút Start trong game nếu có
-      if (info.hasStartBtn && info.startBtnElement && this.state === 'WAITING_FOR_START') {
+      if (!isRaw && info.hasStartBtn && info.startBtnElement && this.state === 'WAITING_FOR_START') {
         console.log('[Game Frame] Tự động nhấn nút Start trong game...');
         try { info.startBtnElement.click(); } catch(e) {}
       }
 
-      // 2. Phát hiện câu Romaji mới -> ghi đè buffer (auto: tự gõ; semi: chờ phím người dùng)
+      // 2. Phát hiện câu Romaji mới -> ghi đè buffer (auto: tự gõ; semi / raw: chờ phím người dùng)
       if (info.fullText) {
         if (info.fullText !== this.buffer) {
           console.log('[Game Frame] Câu Romaji mới vào buffer:', info.fullText);
@@ -502,7 +522,7 @@
       // 3. Màn hình chờ bấm Space ("スペースキー")
       if (info.isPromptScreen) {
         this.setState('WAITING_FOR_START');
-        if (this.config.autoSpace) {
+        if (this.config.autoSpace && !isRaw) {
           setTimeout(() => {
             if (this.state === 'WAITING_FOR_START') {
               this.pressSpace();
@@ -526,7 +546,7 @@
       // Đang tắt: chỉ cập nhật buffer, giữ nguyên PAUSED
       if (this.state === 'PAUSED') return;
 
-      if (this.config.mode === 'semi') {
+      if (this.config.mode === 'semi' || this.config.mode === 'raw') {
         this.setState('TYPING');
         return;
       }
@@ -596,4 +616,10 @@
   }
 
   window.ETypingEngine = new TypingEngine();
+
+  // Raw-Input là chế độ mặc định: tự kích hoạt ngay khi vào frame bài test.
+  // Nếu cấu hình đã lưu là chế độ khác, settings.js sẽ đổi lại và onModeChange() đưa engine về IDLE.
+  if (!window.ETypingEngine.isHost && window.ETypingEngine.config.mode === 'raw') {
+    window.ETypingEngine.start();
+  }
 })();
