@@ -7,10 +7,8 @@
   // Elements
   const statusBadge = document.getElementById('pop-status-badge');
   const statusText = document.getElementById('pop-status-text');
-  const btnStart = document.getElementById('pop-btn-start');
   const btnPause = document.getElementById('pop-btn-pause');
-  const btnStop = document.getElementById('pop-btn-stop');
-  const btnSpace = document.getElementById('pop-btn-space');
+  const controlNote = document.getElementById('pop-control-note');
 
   const sliderWpm = document.getElementById('pop-slider-wpm');
   const inputWpm = document.getElementById('pop-input-wpm');
@@ -33,13 +31,14 @@
 
   const DEFAULT_MODE = 'raw';
   const MODE_INFO = {
-    raw: { label: 'Raw', hint: 'Bạn tự gõ, sai thì hiện romaji', typing: 'Đang theo dõi...' },
-    auto: { label: 'Auto', hint: 'Tự gõ theo WPM & Accuracy', typing: 'Đang gõ...' },
+    raw: { label: 'Raw-Input', hint: 'Bạn tự gõ, sai thì hiện romaji', typing: 'Đang theo dõi...' },
+    auto: { label: 'Automatic', hint: 'Tự gõ theo WPM & Accuracy', typing: 'Đang gõ...' },
     semi: { label: 'Semi-Auto', hint: 'Mỗi phím bạn gõ = 1 ký tự đúng', typing: 'Chờ phím của bạn...' }
   };
 
   let currentEngineState = 'IDLE';
   let currentMode = DEFAULT_MODE;
+  let currentPrevMode = null;
 
   // Cập nhật giao diện theo chế độ (không gửi đi)
   function renderMode(mode) {
@@ -53,13 +52,25 @@
     // Semi-Auto / Raw không dùng WPM: nhịp gõ là của người dùng. Raw không tạo lỗi nên không cần Accuracy
     secWpm.hidden = currentMode !== 'auto';
     secAcc.hidden = currentMode === 'raw';
+    renderControls();
     applyState(currentEngineState);
   }
 
+  // Raw-Input: không có nút điều khiển. Automatic / Semi-Auto: chỉ có Pause
+  function renderControls() {
+    const isRaw = currentMode === 'raw';
+    btnPause.hidden = isRaw;
+    controlNote.hidden = !isRaw;
+    controlNote.textContent = isRaw && currentPrevMode
+      ? `Đã tạm dừng ${MODE_INFO[currentPrevMode].label}. Nhấn F8 trên trang để quay lại.`
+      : 'Raw-Input luôn hoạt động: bạn tự gõ, gõ sai thì romaji hiện ra.';
+  }
+
+  // Chế độ chỉ sống trong trang (tải lại trang là về Raw-Input), nên không lưu vào storage
   function setMode(mode) {
+    currentPrevMode = null;
     renderMode(mode);
-    sendTabMessage('UPDATE_CONFIG', { config: { mode: currentMode } });
-    chrome.storage.local.set({ etm_mode: currentMode });
+    sendTabMessage('SET_MODE', { mode: currentMode });
   }
 
   modeButtons.forEach(btn => {
@@ -86,47 +97,33 @@
     statusBadge.className = 'status-badge';
 
     switch (state) {
-      case 'IDLE':
-        statusBadge.classList.add('idle');
-        statusText.textContent = 'Sẵn sàng';
-        btnStart.disabled = false;
-        btnStart.textContent = `▶ Bắt đầu (${MODE_INFO[currentMode].label})`;
-        btnPause.disabled = true;
-        btnPause.textContent = '⏸ Tạm dừng';
+      case 'ARMED':
+        statusBadge.classList.add('waiting');
+        statusText.textContent = 'Nhấn 1 phím để chạy';
         break;
       case 'WAITING_FOR_START':
         statusBadge.classList.add('waiting');
-        statusText.textContent = 'Chờ Space / Đếm ngược';
-        btnStart.disabled = true;
-        btnPause.disabled = false;
+        statusText.textContent = currentMode === 'raw' ? 'Đang theo dõi...' : 'Chờ Space / Đếm ngược';
         break;
       case 'TYPING':
       case 'BETWEEN_SENTENCES':
         statusBadge.classList.add('typing');
         statusText.textContent = MODE_INFO[currentMode].typing;
-        btnStart.disabled = true;
-        btnPause.disabled = false;
-        btnPause.textContent = '⏸ Tạm dừng';
-        break;
-      case 'PAUSED':
-        statusBadge.classList.add('paused');
-        statusText.textContent = 'Đã tạm dừng';
-        btnStart.disabled = true;
-        btnPause.disabled = false;
-        btnPause.textContent = '▶ Tiếp tục';
         break;
       case 'COMPLETED':
         statusBadge.classList.add('completed');
-        statusText.textContent = 'Đã hoàn tất!';
-        btnStart.disabled = false;
-        btnStart.textContent = '▶ Gõ lại';
-        btnPause.disabled = true;
+        statusText.textContent = 'Đã hoàn tất! (tải lại trang để làm bài mới)';
+        break;
+      case 'IDLE':
+        statusBadge.classList.add('idle');
+        statusText.textContent = 'Sẵn sàng';
         break;
       default:
         statusBadge.classList.add('idle');
         statusText.textContent = 'Chưa vào test';
         break;
     }
+    btnPause.disabled = state === 'COMPLETED' || state === 'UNAVAILABLE';
   }
 
   // Cập nhật WPM
@@ -180,38 +177,24 @@
     btn.addEventListener('click', () => updateAcc(btn.getAttribute('data-acc')));
   });
 
-  // Event Listeners cho Control Buttons
-  btnStart.addEventListener('click', () => {
-    sendTabMessage('START');
-    applyState('TYPING');
-  });
-
+  // Pause: Automatic / Semi-Auto -> Raw-Input (engine nhớ chế độ trước, F8 trên trang để quay lại)
   btnPause.addEventListener('click', () => {
-    if (currentEngineState === 'PAUSED') {
-      sendTabMessage('RESUME');
-      applyState('TYPING');
-    } else {
-      sendTabMessage('PAUSE');
-      applyState('PAUSED');
-    }
-  });
-
-  btnStop.addEventListener('click', () => {
-    sendTabMessage('STOP');
-    applyState('IDLE');
-  });
-
-  btnSpace.addEventListener('click', () => {
-    sendTabMessage('PRESS_SPACE');
+    if (currentMode === 'raw') return;
+    currentPrevMode = currentMode;
+    renderMode('raw');
+    sendTabMessage('PAUSE');
   });
 
   // Đọc cấu hình và trạng thái hiện tại
   function refreshStatus() {
     sendTabMessage('GET_STATUS', {}, (res) => {
       if (res && res.state) {
+        if (res.mode && (res.mode !== currentMode || (res.prevMode || null) !== currentPrevMode)) {
+          currentPrevMode = res.prevMode || null;
+          renderMode(res.mode);
+        }
         applyState(res.state);
         if (res.config) {
-          if (res.config.mode && res.config.mode !== currentMode) renderMode(res.config.mode);
           if (res.config.wpm) {
             sliderWpm.value = res.config.wpm;
             inputWpm.value = res.config.wpm;
@@ -236,10 +219,12 @@
   }
 
   // Load storage dự phòng
-  chrome.storage.local.get(['etm_mode', 'etm_wpm', 'etm_acc', 'etm_humanize', 'etm_hide_enabled'], (res) => {
+  // Hiển thị Raw-Input cho tới khi trang trả lời chế độ thật
+  renderMode(DEFAULT_MODE);
+
+  chrome.storage.local.get(['etm_wpm', 'etm_acc', 'etm_humanize', 'etm_hide_enabled'], (res) => {
     // Mặc định bật, giống hider.js
     chkHide.checked = res.etm_hide_enabled !== false;
-    renderMode(res.etm_mode || DEFAULT_MODE);
     if (res.etm_wpm) updateWPM(res.etm_wpm);
     if (res.etm_acc) updateAcc(res.etm_acc);
     if (res.etm_humanize !== undefined) chkHumanize.checked = res.etm_humanize;

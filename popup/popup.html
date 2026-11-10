@@ -43,14 +43,9 @@
           <span>Điều khiển</span>
           <span class="hotkey-tip">Phím tắt: [F8]</span>
         </div>
-        <div class="btn-group-2">
-          <button class="btn btn-primary" id="pop-btn-start">▶ Bắt đầu (Auto)</button>
-          <button class="btn btn-secondary" id="pop-btn-pause" disabled>⏸ Tạm dừng</button>
-        </div>
-        <div class="btn-group-2" style="margin-top: 6px;">
-          <button class="btn btn-secondary" id="pop-btn-stop" style="font-size: 11px;">⏹ Dừng lại</button>
-          <button class="btn btn-accent" id="pop-btn-space" style="font-size: 11px;">␣ Nhấn Space</button>
-        </div>
+        <!-- Chỉ có ở Automatic / Semi-Auto: Pause = chuyển sang Raw-Input, F8 ở Raw để quay lại -->
+        <button class="btn btn-secondary btn-block" id="pop-btn-pause" hidden>⏸ Tạm dừng (sang Raw-Input)</button>
+        <p class="control-note" id="pop-control-note">Raw-Input luôn hoạt động: bạn tự gõ, gõ sai thì romaji hiện ra.</p>
         <label class="checkbox-row">
           <input type="checkbox" id="pop-chk-hide" checked>
           <span>Ẩn romaji trên trang</span>

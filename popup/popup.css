@@ -169,6 +169,23 @@ h1 {
   transition: all 0.15s ease;
 }
 
+.btn-block {
+  width: 100%;
+}
+
+.btn[hidden] {
+  display: none;
+}
+
+.control-note {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.control-note[hidden] {
+  display: none;
+}
+
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
